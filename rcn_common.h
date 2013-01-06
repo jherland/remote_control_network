@@ -167,160 +167,194 @@
 #endif
 
 #include <Arduino.h>
-#include <Print.h>
 
 const unsigned int RCN_VERSION = 1;
-const uint8_t RCN_SEND_BUF_SIZE = 16;
 
-struct rfm12b_config {
-	uint8_t node; // ID of this node (1..30)
-	uint8_t band; // RF12_433MHZ, RF12_868MHZ or RF12_915MHZ
-	uint8_t group; // Netgroup (1..212 for RFM12B, 212 for RFM12)
-};
-
-struct rcn_payload {
-	uint8_t channel  : 7; // Channel ID
-	uint8_t relative : 1; // Level is relative (=1) or absolute (=0).
-	union {
-		uint8_t abs_level;
-		int8_t  rel_level;
+class RCN_Node
+{
+private:
+	class Payload
+	{
+	public:
+		uint8_t channel  : 7; // Channel ID
+		uint8_t relative : 1; // Relative (set) or absolute level
+		union {
+			uint8_t abs_level;
+			int8_t  rel_level;
+		};
 	};
-};
 
-struct rcn_packet {
-	uint8_t hdr; // RFM12B packer header
-	union {
-		struct rcn_payload d;
-		uint8_t b[sizeof(struct rcn_payload)];
+	class Packet
+	{
+	public:
+		uint8_t hdr; // RFM12B packer header
+		union {
+			Payload d;
+			uint8_t b[sizeof(Payload)];
+		};
 	};
-};
 
-// TODO: Consider making these instance variables of an RCN_Node class.
-Print *rcn_logger;
-const struct rfm12b_config *rfm12b_cfg;
-struct rcn_packet rcn_send_buf[RCN_SEND_BUF_SIZE]; // ring buffer
-uint8_t rcn_send_buf_next = 0; // producer adds packets at this index
-uint8_t rcn_send_buf_done = 0; // consumer reads packets from this index
+	static const uint8_t SEND_BUF_SIZE = 16;
+	Packet send_buf[SEND_BUF_SIZE]; // ring buffer
+	uint8_t send_buf_next; // producer adds packets at this index
+	uint8_t send_buf_done; // consumer reads packets from this index
+	uint8_t rf12_band; // RF12_433MHZ, RF12_868MHZ or RF12_915MHZ
+	uint8_t rf12_group; // Netgroup (1..212 for RFM12B, 212 for RFM12)
+	uint8_t rf12_node; // ID of this node (1..30)
 
-// Pass in Serial as logger
-void rcn_init(const struct rfm12b_config *cfg, Print& logger)
-{
-	rcn_logger = &logger;
-	rfm12b_cfg = cfg;
-	rf12_initialize(cfg->node, cfg->band, cfg->group);
-
-	rcn_logger->print(F("Initializing RCN v"));
-	rcn_logger->print(RCN_VERSION);
-	rcn_logger->print(F(", using RFM12B group.node "));
-	rcn_logger->print(cfg->group);
-	rcn_logger->print(F("."));
-	rcn_logger->print(cfg->node);
-	rcn_logger->print(F(" @ "));
-	rcn_logger->print(cfg->band == RF12_868MHZ ? 868
-		  : (cfg->band == RF12_433MHZ ? 433 : 915));
-	rcn_logger->println(F("MHz"));
-}
-
-struct rcn_packet *rcn_prepare_send_packet(void)
-{
-	struct rcn_packet *p = rcn_send_buf + rcn_send_buf_next;
-	// Advance producer index to next index w/wrap-around.
-	++rcn_send_buf_next %= RCN_SEND_BUF_SIZE;
-	// We should never overtake the consumer index.
-	if (rcn_send_buf_next == rcn_send_buf_done)
-		rcn_logger->println(F("Oops! OVerrunning rcn_send_buf!"));
-	return p;
-}
-
-void rcn_send_status_update(uint8_t chan, uint8_t level)
-{
-	// Prepare broadcast packet with given data
-	struct rcn_packet *p = rcn_prepare_send_packet();
-	p->hdr = RF12_HDR_MASK & rfm12b_cfg->node;
-	p->d.relative = 0;
-	p->d.channel = chan;
-	p->d.abs_level = level;
-}
-
-void rcn_send_update_request_abs(uint8_t host, uint8_t chan, uint8_t levl)
-{
-	// Prepare directed packet with given data
-	struct rcn_packet *p = rcn_prepare_send_packet();
-	p->hdr = RF12_HDR_DST | (RF12_HDR_MASK & host);
-	p->d.relative = 0;
-	p->d.channel = chan;
-	p->d.abs_level = levl;
-}
-
-void rcn_send_update_request_rel(uint8_t host, uint8_t chan, int8_t adj)
-{
-	// Prepare directed packet with given data
-	struct rcn_packet *p = rcn_prepare_send_packet();
-	p->hdr = RF12_HDR_DST | (RF12_HDR_MASK & host);
-	p->d.relative = 1;
-	p->d.channel = chan;
-	p->d.rel_level = adj;
-}
-
-void rcn_send_status_request(uint8_t host, uint8_t chan)
-{
-	rcn_send_update_request_rel(host, chan, 0);
-}
-
-#ifdef DEBUG
-void rcn_print_byte_buf(const volatile uint8_t *buf, size_t len)
-{
-	for (size_t i = 0; i < len; i++) {
-		rcn_logger->print(F(" "));
-		if (buf[i] <= 0xf)
-			rcn_logger->print(F("0"));
-		rcn_logger->print(buf[i], HEX);
-	}
-	rcn_logger->println();
-}
-#endif
-
-const struct rcn_payload *rcn_send_and_recv(void)
-{
-	if (rcn_send_buf_next != rcn_send_buf_done && rf12_canSend()) {
-		// We have packets to send, and we can send them...
-		struct rcn_packet * p = rcn_send_buf + rcn_send_buf_done;
-		++rcn_send_buf_done %= RCN_SEND_BUF_SIZE;
-		rf12_sendStart(p->hdr, p->b, sizeof(p->b));
-
-#ifdef DEBUG
-		rcn_logger->print(F("rcn_send_and_recv(): Sending "));
-		rcn_logger->print((p->hdr & RF12_HDR_DST)
-			? F("message to node ")
-			: F("broadcast from node "));
-		rcn_logger->print(p->hdr & RF12_HDR_MASK);
-		rcn_logger->print(": ");
-		rcn_print_byte_buf(p->b, sizeof(p->b));
-#endif
+	Packet *prepare_packet(void)
+	{
+		Packet *p = send_buf + send_buf_next;
+		// Advance producer index to next index w/wrap-around.
+		++send_buf_next %= SEND_BUF_SIZE;
+		// We should never overtake the consumer index.
+		if (send_buf_next == send_buf_done)
+			Serial.println(F("Oops! Overrunning send_buf!"));
+		return p;
 	}
 
-	if (rf12_recvDone()) {
-		if (rf12_crc) {
 #ifdef DEBUG
-			rcn_logger->println(F("rcn_send_and_recv(): "
-				"Dropping packet with CRC mismatch!"));
-#endif
-			return NULL;
+	void print_bytes(const volatile uint8_t *buf, size_t len)
+	{
+		for (size_t i = 0; i < len; i++) {
+			Serial.print(F(" "));
+			if (buf[i] <= 0xf)
+				Serial.print(F("0"));
+			Serial.print(buf[i], HEX);
 		}
-#ifdef DEBUG
-		rcn_logger->print(F("rcn_send_and_recv(): Received "));
-		rcn_logger->print((rf12_hdr & RF12_HDR_DST)
-			? F("message") : F("broadcast"));
-		rcn_logger->print(F(" from node "));
-		rcn_logger->print(rf12_hdr & RF12_HDR_MASK);
-		rcn_logger->print(": ");
-		rcn_print_byte_buf(rf12_data, rf12_len);
-#endif
-		if (rf12_len != sizeof(struct rcn_payload))
-			return NULL;
-		return (struct rcn_payload *) rf12_data;
+		Serial.println();
 	}
-	return NULL;
-}
+#endif
+
+public:
+	// Pass in Serial as logger
+	RCN_Node(uint8_t rf12_band, uint8_t rf12_group, uint8_t rf12_node)
+	: send_buf_next(0),
+	  send_buf_done(0),
+	  rf12_band(rf12_band),
+	  rf12_group(rf12_group),
+	  rf12_node(rf12_node)
+	{
+	}
+
+	void init(void)
+	{
+		rf12_initialize(rf12_node, rf12_band, rf12_group);
+
+		Serial.print(F("Initializing RCN v"));
+		Serial.print(RCN_VERSION);
+		Serial.print(F(", using RFM12B group.node "));
+		Serial.print(rf12_group);
+		Serial.print(F("."));
+		Serial.print(rf12_node);
+		Serial.print(F(" @ "));
+		Serial.print(rf12_band == RF12_868MHZ ? 868
+			: (rf12_band == RF12_433MHZ ? 433 : 915));
+		Serial.println(F("MHz"));
+	}
+
+	void send_status_update(uint8_t channel, uint8_t level)
+	{
+		// Prepare broadcast packet with given data
+		Packet *p = prepare_packet();
+		p->hdr = RF12_HDR_MASK & rf12_node;
+		p->d.relative = 0;
+		p->d.channel = channel;
+		p->d.abs_level = level;
+	}
+
+	void send_update_request_abs(
+		uint8_t host, uint8_t channel, uint8_t level)
+	{
+		// Prepare directed packet with given data
+		Packet *p = prepare_packet();
+		p->hdr = RF12_HDR_DST | (RF12_HDR_MASK & host);
+		p->d.relative = 0;
+		p->d.channel = channel;
+		p->d.abs_level = level;
+	}
+
+	void send_update_request_rel(
+		uint8_t host, uint8_t channel, int8_t adjust)
+	{
+		// Prepare directed packet with given data
+		Packet *p = prepare_packet();
+		p->hdr = RF12_HDR_DST | (RF12_HDR_MASK & host);
+		p->d.relative = 1;
+		p->d.channel = channel;
+		p->d.rel_level = adjust;
+	}
+
+	void send_status_request(uint8_t host, uint8_t channel)
+	{
+		send_update_request_rel(host, channel, 0);
+	}
+
+	class RecvPacket
+	{
+	private:
+		friend class RCN_Node;
+		Payload d; // Copy of rf12_data
+		uint8_t h; // Copy of rf12_hdr
+
+		void copy(uint8_t hdr, const volatile uint8_t *data)
+		{
+			h = hdr;
+			d = *(struct Payload *)data;
+		}
+	public:
+		bool bcast() const { return !(h & RF12_HDR_DST); }
+		uint8_t node() const { return h & RF12_HDR_MASK; }
+		uint8_t channel() const { return d.channel; }
+		bool relative() const { return d.relative; }
+		uint8_t abs_level() const { return d.abs_level; }
+		int8_t rel_level() const { return d.rel_level; }
+	};
+
+	bool send_and_recv(RecvPacket& recvd)
+	{
+		if (send_buf_next != send_buf_done && rf12_canSend()) {
+			// We have packets to send, and we can send them.
+			Packet * p = send_buf + send_buf_done;
+			++send_buf_done %= SEND_BUF_SIZE;
+			rf12_sendStart(p->hdr, p->b, sizeof(p->b));
+
+#ifdef DEBUG
+			Serial.print(F("send_and_recv(): Sending "));
+			Serial.print((p->hdr & RF12_HDR_DST)
+				? F("message to node ")
+				: F("broadcast from node "));
+			Serial.print(p->hdr & RF12_HDR_MASK);
+			Serial.print(": ");
+			print_bytes(p->b, sizeof(p->b));
+#endif
+		}
+
+		if (rf12_recvDone()) {
+			if (rf12_crc) {
+#ifdef DEBUG
+				Serial.println(F("send_and_recv(): "
+					"Dropping packet with CRC "
+					"mismatch!"));
+#endif
+				return false;
+			}
+#ifdef DEBUG
+			Serial.print(F("send_and_recv(): Received "));
+			Serial.print((rf12_hdr & RF12_HDR_DST)
+				? F("message") : F("broadcast"));
+			Serial.print(F(" from node "));
+			Serial.print(rf12_hdr & RF12_HDR_MASK);
+			Serial.print(": ");
+			print_bytes(rf12_data, rf12_len);
+#endif
+			if (rf12_len != sizeof(Payload))
+				return false;
+			recvd.copy(rf12_hdr, rf12_data);
+			return true;
+		}
+		return false;
+	}
+};
 
 #endif // RCN_COMMON_H
