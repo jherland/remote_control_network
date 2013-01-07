@@ -4,7 +4,7 @@
  * This library implements a network of "hosts" and "controllers" on top
  * of a RFM12B network group.
  *
- * NOTE: This library depends on <RF12.h> being #included before this file.
+ * NOTE: You must #include <RF12.h> before #including this file.
  *
  * Objective
  * ---------
@@ -202,7 +202,7 @@ private:
 	uint8_t rf12_group; // Netgroup (1..212 for RFM12B, 212 for RFM12)
 	uint8_t rf12_node; // ID of this node (1..30)
 
-	Packet *prepare_packet(void)
+	Packet *prepare_packet()
 	{
 		Packet *p = send_buf + send_buf_next;
 		// Advance producer index to next index w/wrap-around.
@@ -214,7 +214,7 @@ private:
 	}
 
 #ifdef DEBUG
-	void print_bytes(const volatile uint8_t *buf, size_t len)
+	static void print_bytes(const volatile uint8_t *buf, size_t len)
 	{
 		for (size_t i = 0; i < len; i++) {
 			Serial.print(F(" "));
@@ -237,7 +237,7 @@ public:
 	{
 	}
 
-	void init(void)
+	void init()
 	{
 		rf12_initialize(rf12_node, rf12_band, rf12_group);
 
