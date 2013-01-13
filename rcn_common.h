@@ -166,6 +166,12 @@
 #error You must #include <RF12.h> before #including this file
 #endif
 
+#ifndef LOG
+#define LOG(...)
+// Alternative for logging to serial port:
+// #define LOG Serial.print
+#endif
+
 #include <Arduino.h>
 
 const unsigned int RCN_VERSION = 1;
@@ -209,25 +215,24 @@ private:
 		++send_buf_next %= SEND_BUF_SIZE;
 		// We should never overtake the consumer index.
 		if (send_buf_next == send_buf_done)
-			Serial.println(F("Oops! Overrunning send_buf!"));
+			LOG(F("Oops! Overrunning send_buf!\n"));
 		return p;
 	}
 
-#ifdef DEBUG
+#if DEBUG
 	static void print_bytes(const volatile uint8_t *buf, size_t len)
 	{
 		for (size_t i = 0; i < len; i++) {
-			Serial.print(F(" "));
+			LOG(F(" "));
 			if (buf[i] <= 0xf)
-				Serial.print(F("0"));
-			Serial.print(buf[i], HEX);
+				LOG(F("0"));
+			LOG(buf[i], HEX);
 		}
-		Serial.println();
+		LOG(F("\n"));
 	}
 #endif
 
 public:
-	// Pass in Serial as logger
 	RCN_Node(uint8_t rf12_band, uint8_t rf12_group, uint8_t rf12_node)
 	: send_buf_next(0),
 	  send_buf_done(0),
@@ -241,16 +246,16 @@ public:
 	{
 		rf12_initialize(rf12_node, rf12_band, rf12_group);
 
-		Serial.print(F("Initializing RCN v"));
-		Serial.print(RCN_VERSION);
-		Serial.print(F(", using RFM12B group.node "));
-		Serial.print(rf12_group);
-		Serial.print(F("."));
-		Serial.print(rf12_node);
-		Serial.print(F(" @ "));
-		Serial.print(rf12_band == RF12_868MHZ ? 868
-			: (rf12_band == RF12_433MHZ ? 433 : 915));
-		Serial.println(F("MHz"));
+		LOG(F("Initializing RCN v"));
+		LOG(RCN_VERSION);
+		LOG(F(", using RFM12B group.node "));
+		LOG(rf12_group);
+		LOG(F("."));
+		LOG(rf12_node);
+		LOG(F(" @ "));
+		LOG(rf12_band == RF12_868MHZ ? 868
+		 : (rf12_band == RF12_433MHZ ? 433 : 915));
+		LOG(F("MHz\n"));
 	}
 
 	void send_status_update(uint8_t channel, uint8_t level)
@@ -319,33 +324,33 @@ public:
 			++send_buf_done %= SEND_BUF_SIZE;
 			rf12_sendStart(p->hdr, p->b, sizeof(p->b));
 
-#ifdef DEBUG
-			Serial.print(F("send_and_recv(): Sending "));
-			Serial.print((p->hdr & RF12_HDR_DST)
-				? F("message to node ")
-				: F("broadcast from node "));
-			Serial.print(p->hdr & RF12_HDR_MASK);
-			Serial.print(": ");
+#if DEBUG
+			LOG(F("send_and_recv(): Sending "));
+			if (p->hdr & RF12_HDR_DST)
+				LOG(F("message to node "));
+			else
+				LOG(F("broadcast from node "));
+			LOG(p->hdr & RF12_HDR_MASK);
+			LOG(": ");
 			print_bytes(p->b, sizeof(p->b));
 #endif
 		}
 
 		if (rf12_recvDone()) {
 			if (rf12_crc) {
-#ifdef DEBUG
-				Serial.println(F("send_and_recv(): "
-					"Dropping packet with CRC "
-					"mismatch!"));
+#if DEBUG
+				LOG(F("send_and_recv(): Dropping packet "
+					"with CRC mismatch!\n"));
 #endif
 				return false;
 			}
-#ifdef DEBUG
-			Serial.print(F("send_and_recv(): Received "));
-			Serial.print((rf12_hdr & RF12_HDR_DST)
+#if DEBUG
+			LOG(F("send_and_recv(): Received "));
+			LOG((rf12_hdr & RF12_HDR_DST)
 				? F("message") : F("broadcast"));
-			Serial.print(F(" from node "));
-			Serial.print(rf12_hdr & RF12_HDR_MASK);
-			Serial.print(": ");
+			LOG(F(" from node "));
+			LOG(rf12_hdr & RF12_HDR_MASK);
+			LOG(": ");
 			print_bytes(rf12_data, rf12_len);
 #endif
 			if (rf12_len != sizeof(Payload))
