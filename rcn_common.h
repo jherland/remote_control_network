@@ -295,6 +295,22 @@ public:
 		send_update_request_rel(host, channel, 0);
 	}
 
+	bool sending() const
+	{
+		return send_buf_next != send_buf_done || !rf12_canSend();
+	}
+
+	bool go_to_sleep()
+	{
+		if (sending())
+			return false;
+		return true;
+	}
+
+	void wake_up()
+	{
+	}
+
 	class RecvPacket
 	{
 	private:
