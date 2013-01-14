@@ -304,11 +304,13 @@ public:
 	{
 		if (sending())
 			return false;
+		rf12_sleep(RF12_SLEEP); // Turn off RFM12B radio
 		return true;
 	}
 
 	void wake_up()
 	{
+		rf12_sleep(RF12_WAKEUP); // Turn on RFM12B radio
 	}
 
 	class RecvPacket
