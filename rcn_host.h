@@ -62,6 +62,7 @@ public:
 		assert(num_channels < RCN_HOST_MAX_CHANNELS);
 		size_t channel = num_channels++;
 		range[channel] = r;
+		level[channel] = l;
 		data[channel] = d;
 		set(channel, l);
 	}
