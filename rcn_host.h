@@ -57,7 +57,7 @@ public:
 		node.init();
 	}
 
-	void addChannel(uint8_t r = 0xff, uint8_t l = 0, uint8_t d = 0)
+	void add_channel(uint8_t r = 0xff, uint8_t l = 0, uint8_t d = 0)
 	{
 		assert(num_channels < RCN_HOST_MAX_CHANNELS);
 		size_t channel = num_channels++;
