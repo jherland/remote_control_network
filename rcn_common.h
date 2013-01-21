@@ -162,6 +162,8 @@
 #ifndef RCN_COMMON_H
 #define RCN_COMMON_H
 
+#include <Arduino.h>
+
 #ifndef RF12_h
 #error You must #include <RF12.h> before #including this file
 #endif
@@ -171,8 +173,6 @@
 // Alternative for logging to serial port:
 // #define LOG Serial.print
 #endif
-
-#include <Arduino.h>
 
 const unsigned int RCN_VERSION = 1;
 
@@ -334,6 +334,7 @@ public:
 		int8_t rel_level() const { return d.rel_level; }
 	};
 
+	/// Call this method often to keep things running smoothly.
 	bool send_and_recv(RecvPacket& recvd)
 	{
 		if (send_buf_next != send_buf_done && rf12_canSend()) {
