@@ -159,8 +159,8 @@
  * License: GNU GPL v2 or later
  */
 
-#ifndef RCN_COMMON_H
-#define RCN_COMMON_H
+#ifndef RCN_NODE_H
+#define RCN_NODE_H
 
 #include <Arduino.h>
 
@@ -381,4 +381,4 @@ public:
 	}
 };
 
-#endif // RCN_COMMON_H
+#endif // RCN_NODE_H
