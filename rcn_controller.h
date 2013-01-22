@@ -156,9 +156,20 @@ public:
 		return node.go_to_sleep();
 	}
 
-	void wake_up()
+	/**
+	 * Wake up from sleep
+	 *
+	 * Pass reset = true, if you want to temporarily reset cached
+	 * levels to zero while waiting for status updates from host.
+	 */
+	void wake_up(bool reset = false)
 	{
 		node.wake_up();
+
+		if (reset) {
+			for (size_t i = 0; i < n_channels; i++)
+				update(i, 0);
+		}
 	}
 };
 
